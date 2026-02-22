@@ -1,7 +1,7 @@
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
 
-IMAGE_NAME := "kmorning/cert-manager-webhook-desec"
+IMAGE_NAME := "grollinger/cert-manager-webhook-desec"
 IMAGE_TAG := "latest"
 
 OUT := $(shell pwd)/_out
