@@ -1,4 +1,4 @@
-module github.com/jetstack/cert-manager-webhook-desec
+module github.com/grollinger/cert-manager-webhook-desec
 
 go 1.26
 

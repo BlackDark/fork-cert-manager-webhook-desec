@@ -65,7 +65,7 @@ else they will have undetermined behaviour when used with cert-manager.
 
 See [here][4] for testing details.
 
-[1]: https://github.com/jetstack/cert-manager
+[1]: https://github.com/cert-manager/cert-manager
 [2]: https://desec.io/
 [3]: https://cert-manager.io/docs/installation/kubernetes/
 [4]: ./testdata/desec/README.md

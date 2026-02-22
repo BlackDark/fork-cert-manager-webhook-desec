@@ -1,40 +1,94 @@
-OS ?= $(shell go env GOOS)
-ARCH ?= $(shell go env GOARCH)
+GO ?= $(shell which go)
+OS ?= $(shell $(GO) env GOOS)
+ARCH ?= $(shell $(GO) env GOARCH)
 
 IMAGE_NAME := "grollinger/cert-manager-webhook-desec"
 IMAGE_TAG := "latest"
 
 OUT := $(shell pwd)/_out
 
-KUBE_VERSION=1.21.2
+HELM_FILES := $(shell find deploy/desec-webhook 2>/dev/null)
 
-$(shell mkdir -p "$(OUT)")
-export TEST_ASSET_ETCD=_test/kubebuilder/bin/etcd
-export TEST_ASSET_KUBE_APISERVER=_test/kubebuilder/bin/kube-apiserver
-export TEST_ASSET_KUBECTL=_test/kubebuilder/bin/kubectl
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p "$(LOCALBIN)"
 
-test: _test/kubebuilder
-	go test -v .
+$(OUT):
+	mkdir -p "$(OUT)"
 
-_test/kubebuilder:
-	curl -fsSL https://go.kubebuilder.io/test-tools/$(KUBE_VERSION)/$(OS)/$(ARCH) -o kubebuilder-tools.tar.gz
-	mkdir -p _test/kubebuilder
-	tar -xvf kubebuilder-tools.tar.gz
-	mv kubebuilder/bin _test/kubebuilder/
-	rm kubebuilder-tools.tar.gz
-	rm -R kubebuilder
+## Tool Binaries
 
-clean: clean-kubebuilder
+ENVTEST ?= $(LOCALBIN)/setup-envtest
 
-clean-kubebuilder:
-	rm -Rf _test/kubebuilder
+#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
+ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/')
 
+#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31.x)
+ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1.x/')
+
+.PHONY: test
+test: setup-envtest
+	@echo "Running tests with Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@echo "Note: Set TEST_ZONE_NAME environment variable to run tests (e.g., TEST_ZONE_NAME=example.com. make test)"
+	$(eval ENVTEST_BIN_PATH := $(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path 2>/dev/null))
+	KUBEBUILDER_ASSETS="$(ENVTEST_BIN_PATH)" \
+	TEST_ASSET_ETCD="$(ENVTEST_BIN_PATH)/etcd" \
+	TEST_ASSET_KUBE_APISERVER="$(ENVTEST_BIN_PATH)/kube-apiserver" \
+	TEST_ASSET_KUBECTL="$(ENVTEST_BIN_PATH)/kubectl" \
+	$(GO) test -v .
+
+.PHONY: setup-envtest
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+		exit 1; \
+	}
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: clean
+clean:
+	chmod -R u+w $(LOCALBIN) $(OUT) 2>/dev/null || true
+	rm -rf $(LOCALBIN) $(OUT)
+
+.PHONY: build
 build:
 	docker build --platform "linux/amd64" -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
 
 .PHONY: rendered-manifest.yaml
-rendered-manifest.yaml:
+rendered-manifest.yaml: $(OUT)/rendered-manifest.yaml
+
+$(OUT)/rendered-manifest.yaml: $(HELM_FILES) | $(OUT)
 	helm template desec-webhook \
         --set image.repository=$(IMAGE_NAME) \
         --set image.tag=$(IMAGE_TAG) \
-        deploy/desec-webhook > "$(OUT)/rendered-manifest.yaml"
+        deploy/desec-webhook > $@
+
+# go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
+# $1 - target path with name of binary
+# $2 - package url which can be installed
+# $3 - specific version of package
+define go-install-tool
+@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
+set -e; \
+package=$(2)@$(3) ;\
+echo "Downloading $${package}" ;\
+rm -f "$(1)" ;\
+GOBIN="$(LOCALBIN)" go install $${package} ;\
+mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
+} ;\
+ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+endef
+
+define gomodver
+$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+endef
