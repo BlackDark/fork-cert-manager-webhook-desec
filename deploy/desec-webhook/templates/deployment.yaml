@@ -3,21 +3,16 @@ kind: Deployment
 metadata:
   name: {{ include "desec-webhook.fullname" . }}
   labels:
-    app: {{ include "desec-webhook.name" . }}
-    chart: {{ include "desec-webhook.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+{{ include "desec-webhook.labels" . | indent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "desec-webhook.name" . }}
-      release: {{ .Release.Name }}
+{{ include "desec-webhook.matchLabels" . | indent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "desec-webhook.name" . }}
-        release: {{ .Release.Name }}
+{{ include "desec-webhook.labels" . | indent 8 }}
     spec:
       serviceAccountName: {{ include "desec-webhook.fullname" . }}
       securityContext:

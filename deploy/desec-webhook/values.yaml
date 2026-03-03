@@ -20,7 +20,7 @@ secretsNames: []
 
 image:
   repository: ghcr.io/blackdark/cert-manager-webhook-desec
-  tag: latest
+  tag: v0.0.1
   pullPolicy: IfNotPresent
 
 nameOverride: ""

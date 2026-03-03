@@ -69,8 +69,6 @@ rules:
       - 'secrets'
     verbs:
       - 'get'
-      - 'watch'
-      - 'list'
 # Allow desec-webhook ServiceAccount to read its secrets
 ---
 # Grant the webhook permission to read the ConfigMap containing the Kubernetes
@@ -149,7 +147,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: desec-webhook
-          image: "ghcr.io/blackdark/cert-manager-webhook-desec:latest"
+          image: "ghcr.io/blackdark/cert-manager-webhook-desec:v0.0.1"
           imagePullPolicy: IfNotPresent
           args:
             - --tls-cert-file=/tls/tls.crt
