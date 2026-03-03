@@ -83,8 +83,10 @@ func (a *API) request(method, path string, body io.Reader, target interface{}) e
 		}
 		return fmt.Errorf("%s %s error: %s", method, path, errResp.Detail)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
-		return fmt.Errorf("%s %s response parsing error: %v", method, path, err)
+	if target != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+			return fmt.Errorf("%s %s response parsing error: %v", method, path, err)
+		}
 	}
 
 	return nil
@@ -157,11 +159,10 @@ func (a *API) AddRecord(subName, domainName, rtype, content string, ttl int) (RR
 		rrset = RRSet{SubName: subName, Type: rtype, Records: records, TTL: ttl}
 	}
 	// write RRSet to deSEC
-	rrsets, err = a.updateRRSet(rrset, domainName)
-	if err != nil {
+	if err := a.updateRRSet(rrset, domainName); err != nil {
 		return nil, err
 	}
-	return rrsets, nil
+	return RRSets{rrset}, nil
 }
 
 // DeleteRecord - Deletes a record from an existing RRSet if exists
@@ -191,11 +192,10 @@ func (a *API) DeleteRecord(subName, domainName, rtype, content string) (RRSets, 
 				records = make([]string, 0)
 			}
 			rrset.Records = records
-			rrsets, err := a.updateRRSet(rrset, domainName)
-			if err != nil {
+			if err := a.updateRRSet(rrset, domainName); err != nil {
 				return nil, err
 			}
-			return rrsets, nil
+			return RRSets{rrset}, nil
 		}
 		return rrsets, nil
 	}
@@ -203,19 +203,14 @@ func (a *API) DeleteRecord(subName, domainName, rtype, content string) (RRSets, 
 	return RRSets{}, nil
 }
 
-func (a *API) updateRRSet(rrset RRSet, domainName string) (RRSets, error) {
-	rrsets := RRSets{}
-	rrsets = append(rrsets, rrset)
+func (a *API) updateRRSet(rrset RRSet, domainName string) error {
+	rrsets := RRSets{rrset}
 	rawJSON, err := json.Marshal(rrsets)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	//fmt.Printf("rawJSON = %s\n", string(rawJSON)) // debug
 	method := "PUT"
 	path := "domains/" + domainName + "/rrsets/"
-	err = a.request(method, path, bytes.NewBuffer(rawJSON), &rrsets)
-	if err != nil {
-		return nil, err
-	}
-	return rrsets, nil
+	return a.request(method, path, bytes.NewBuffer(rawJSON), nil)
 }
