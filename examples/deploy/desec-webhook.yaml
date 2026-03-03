@@ -67,11 +67,8 @@ rules:
   - apiGroups: [""]
     resources:
       - 'secrets'
-    resourceNames: 
     verbs:
       - 'get'
-      - 'watch'
-      - 'list'
 # Allow desec-webhook ServiceAccount to read its secrets
 ---
 # Grant the webhook permission to read the ConfigMap containing the Kubernetes
@@ -134,7 +131,7 @@ metadata:
   labels:
     app: desec-webhook
 spec:
-  replicas: 
+  replicas: 1
   selector:
     matchLabels:
       app: desec-webhook
@@ -144,19 +141,24 @@ spec:
         app: desec-webhook
     spec:
       serviceAccountName: desec-webhook
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: desec-webhook
-          image: "kmorning/cert-manager-webhook-desec:latest"
+          image: "ghcr.io/blackdark/cert-manager-webhook-desec:v0.0.1"
           imagePullPolicy: IfNotPresent
           args:
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key
+            - --secure-port=8443
           env:
             - name: GROUP_NAME
               value: "acme.ukmetrics.ca"
           ports:
             - name: https
-              containerPort: 443
+              containerPort: 8443
               protocol: TCP
           livenessProbe:
             httpGet:
@@ -172,6 +174,12 @@ spec:
             - name: certs
               mountPath: /tls
               readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             {}
       volumes:

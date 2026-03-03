@@ -3,10 +3,7 @@ kind: Service
 metadata:
   name: {{ include "desec-webhook.fullname" . }}
   labels:
-    app: {{ include "desec-webhook.name" . }}
-    chart: {{ include "desec-webhook.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+{{ include "desec-webhook.labels" . | indent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -15,5 +12,4 @@ spec:
       protocol: TCP
       name: https
   selector:
-    app: {{ include "desec-webhook.name" . }}
-    release: {{ .Release.Name }}
+{{ include "desec-webhook.matchLabels" . | indent 4 }}

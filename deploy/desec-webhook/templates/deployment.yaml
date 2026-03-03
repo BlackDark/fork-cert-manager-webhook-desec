@@ -3,23 +3,20 @@ kind: Deployment
 metadata:
   name: {{ include "desec-webhook.fullname" . }}
   labels:
-    app: {{ include "desec-webhook.name" . }}
-    chart: {{ include "desec-webhook.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+{{ include "desec-webhook.labels" . | indent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "desec-webhook.name" . }}
-      release: {{ .Release.Name }}
+{{ include "desec-webhook.matchLabels" . | indent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "desec-webhook.name" . }}
-        release: {{ .Release.Name }}
+{{ include "desec-webhook.labels" . | indent 8 }}
     spec:
       serviceAccountName: {{ include "desec-webhook.fullname" . }}
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -27,12 +24,13 @@ spec:
           args:
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key
+            - --secure-port=8443
           env:
             - name: GROUP_NAME
               value: {{ .Values.groupName | quote }}
           ports:
             - name: https
-              containerPort: 443
+              containerPort: 8443
               protocol: TCP
           livenessProbe:
             httpGet:
@@ -48,6 +46,8 @@ spec:
             - name: certs
               mountPath: /tls
               readOnly: true
+          securityContext:
+{{ toYaml .Values.securityContext | indent 12 }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
       volumes:

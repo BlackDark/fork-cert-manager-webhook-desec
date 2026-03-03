@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
-	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 
-	"github.com/jetstack/cert-manager-webhook-desec/desec"
-	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
-	"github.com/jetstack/cert-manager/pkg/acme/webhook/cmd"
-	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	"github.com/jetstack/cert-manager/pkg/issuer/acme/dns/util"
+	"github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
+	"github.com/cert-manager/cert-manager/pkg/acme/webhook/cmd"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	"github.com/cert-manager/cert-manager/pkg/issuer/acme/dns/util"
+	"github.com/grollinger/cert-manager-webhook-desec/desec"
 )
 
 // GroupName is the API group name (should be unique cluster-wide)
@@ -51,7 +52,7 @@ func main() {
 
 // deSECDNSProviderSolver implements the provider-specific logic needed to
 // 'present' an ACME challenge TXT record for your own DNS provider.
-// To do so, it must implement the `github.com/jetstack/cert-manager/pkg/acme/webhook.Solver`
+// To do so, it must implement the `github.com/cert-manager/cert-manager/pkg/acme/webhook.Solver`
 // interface.
 type deSECDNSProviderSolver struct {
 	// If a Kubernetes 'clientset' is needed, you must:
@@ -191,19 +192,41 @@ func (c *deSECDNSProviderSolver) doAction(ch *v1alpha1.ChallengeRequest, action 
 	if err != nil {
 		return err
 	}
+	domainName := util.UnFqdn(domain.Name)
 
 	// Get the subdomain portion of fqdn
-	subName := fqdn[:len(fqdn)-len(domain.Name)-1]
+	subName, err := getSubName(fqdn, domainName)
+	if err != nil {
+		return err
+	}
 
 	switch action {
 	case actionPresent:
-		_, err := api.AddRecord(subName, domain.Name, "TXT", key, domain.MinimumTTL)
+		_, err := api.AddRecord(subName, domainName, "TXT", key, domain.MinimumTTL)
 		return err
 	case actionCleanup:
-		_, err := api.DeleteRecord(subName, domain.Name, "TXT", key)
+		_, err := api.DeleteRecord(subName, domainName, "TXT", key)
 		return err
 	}
 	return nil
+}
+
+// getSubName extracts the record subname from a fully-qualified domain name.
+func getSubName(fqdn, domainName string) (string, error) {
+	if fqdn == "" || domainName == "" {
+		return "", fmt.Errorf("resolved fqdn and domain name must be set")
+	}
+
+	if fqdn == domainName {
+		return "", nil
+	}
+
+	suffix := "." + domainName
+	if !strings.HasSuffix(fqdn, suffix) {
+		return "", fmt.Errorf("resolved fqdn %q is not part of domain %q", fqdn, domainName)
+	}
+
+	return strings.TrimSuffix(fqdn, suffix), nil
 }
 
 // loadConfig is a small helper function that decodes JSON configuration into
@@ -212,10 +235,13 @@ func loadConfig(cfgJSON *extapi.JSON) (deSECDNSProviderConfig, error) {
 	cfg := deSECDNSProviderConfig{}
 	// handle the 'base case' where no configuration has been provided
 	if cfgJSON == nil {
-		return cfg, nil
+		return cfg, fmt.Errorf("solver config is required and must include apiTokenSecretRef")
 	}
 	if err := json.Unmarshal(cfgJSON.Raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("error decoding solver config: %v", err)
+	}
+	if cfg.APITokenSecretRef.Name == "" || cfg.APITokenSecretRef.Key == "" {
+		return cfg, fmt.Errorf("invalid solver config: apiTokenSecretRef.name and apiTokenSecretRef.key are required")
 	}
 
 	return cfg, nil

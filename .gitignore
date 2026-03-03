@@ -17,5 +17,10 @@ cert-manager-webhook-example
 # Keep test api token secret
 testdata/desec/desec-token.yaml
 
-# output dir
+# Make artifacts
+bin
 _out
+_test
+
+.gocache/
+.gomodcache/

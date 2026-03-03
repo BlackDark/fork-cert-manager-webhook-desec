@@ -1,25 +1,25 @@
-FROM golang:1.13-alpine AS build_deps
+FROM golang:1.26-alpine AS build
 
-RUN apk add --no-cache git
+RUN apk add --no-cache ca-certificates git
 
 WORKDIR /workspace
-ENV GO111MODULE=on
 
-COPY go.mod .
-COPY go.sum .
-
+COPY go.mod go.sum ./
 RUN go mod download
-
-FROM build_deps AS build
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -o webhook -ldflags '-w -extldflags "-static"' .
+ARG TARGETOS
+ARG TARGETARCH
+RUN export GOOS="${TARGETOS:-linux}"; \
+    if [ -n "${TARGETARCH}" ]; then export GOARCH="${TARGETARCH}"; fi; \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/webhook .
 
-FROM alpine:3.12
+FROM scratch
 
-RUN apk add --no-cache ca-certificates
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /out/webhook /webhook
 
-COPY --from=build /workspace/webhook /usr/local/bin/webhook
+USER 65532:65532
 
-ENTRYPOINT ["webhook"]
+ENTRYPOINT ["/webhook"]

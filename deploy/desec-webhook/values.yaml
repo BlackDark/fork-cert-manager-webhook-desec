@@ -8,13 +8,19 @@
 # here is recommended.
 groupName: acme.ukmetrics.ca
 
+replicaCount: 1
+
 certManager:
   namespace: cert-manager
   serviceAccountName: cert-manager
 
+# Optional list of secret names this webhook can read in certManager.namespace.
+# Keep this empty to allow reading any secret in that namespace.
+secretsNames: []
+
 image:
-  repository: kmorning/cert-manager-webhook-desec
-  tag: latest
+  repository: ghcr.io/blackdark/cert-manager-webhook-desec
+  tag: v0.0.1
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -23,6 +29,18 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   port: 443
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
 
 resources:
   {}

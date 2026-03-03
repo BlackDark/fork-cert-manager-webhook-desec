@@ -22,15 +22,55 @@ Once you're satisfied with the changes, deploy the webhook with:
 $ kubectl apply -f examples/deploy/desec-webhook.yaml
 ```
 
-### Using Helm
+### Using Helm (from this repository)
 
-TODO
+```bash
+$ helm upgrade --install desec-webhook ./deploy/desec-webhook \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager
+```
+
+If you want to scope secret access, set `secretsNames`:
+
+```bash
+$ helm upgrade --install desec-webhook ./deploy/desec-webhook \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager \
+  --set-json 'secretsNames=["desec-token"]'
+```
+
+### Using Helm (OCI chart from GHCR)
+
+```bash
+$ helm upgrade --install desec-webhook oci://ghcr.io/blackdark/charts/desec-webhook \
+  --version 1.2.3 \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager
+```
+
+If you want to scope secret access, set `secretsNames`:
+
+```bash
+$ helm upgrade --install desec-webhook oci://ghcr.io/blackdark/charts/desec-webhook \
+  --version 1.2.3 \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager \
+  --set-json 'secretsNames=["desec-token"]'
+```
 
 ## Usage
 
 ### Deploy an API Token Secret
 
-The deSEC API token needs to placed into a kubernetes secret. You can use the file `examples\desec-token.yaml` as a starting point. Place your Base64-encoded API token into the manifest. This can be obtained with:
+The deSEC API token needs to placed into a kubernetes secret. You can use the file `examples/desec-token.yaml` as a starting point. Place your Base64-encoded API token into the manifest. This can be obtained with:
 
 ```bash
 $ echo -n "your-api-token" | base64
@@ -58,6 +98,22 @@ $ kubectl get secret test-example-com-tls -o json | jq -r '.data."tls.crt"' | ba
 $ make build
 ```
 
+## Releasing Image and Helm Chart
+
+The repository includes:
+
+- `.github/workflows/release-image.yaml` for the container image
+- `.github/workflows/release-helm-chart.yaml` for the Helm chart (OCI in GHCR)
+
+Push a tag like `v1.2.3` to publish:
+
+- Multi-arch image (`linux/amd64`, `linux/arm64`) to `ghcr.io/blackdark/cert-manager-webhook-desec`
+- Helm chart to `oci://ghcr.io/blackdark/charts/desec-webhook` with chart version `1.2.3`
+
+You can also run workflows manually from the Actions tab (`workflow_dispatch`).
+
+For manual chart releases, pass `chart_version` (for example `1.2.3`) when starting the `release-helm-chart` workflow.
+
 ### Running the test suite
 
 All DNS providers **must** run the DNS01 provider conformance testing suite,
@@ -65,7 +121,7 @@ else they will have undetermined behaviour when used with cert-manager.
 
 See [here][4] for testing details.
 
-[1]: https://github.com/jetstack/cert-manager
+[1]: https://github.com/cert-manager/cert-manager
 [2]: https://desec.io/
 [3]: https://cert-manager.io/docs/installation/kubernetes/
 [4]: ./testdata/desec/README.md

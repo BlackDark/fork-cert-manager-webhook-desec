@@ -1,35 +1,94 @@
-IMAGE_NAME := "kmorning/cert-manager-webhook-desec"
+GO ?= $(shell which go)
+OS ?= $(shell $(GO) env GOOS)
+ARCH ?= $(shell $(GO) env GOARCH)
+
+IMAGE_NAME := "ghcr.io/blackdark/cert-manager-webhook-desec"
 IMAGE_TAG := "latest"
 
 OUT := $(shell pwd)/_out
 
-KUBEBUILDER_VERSION=2.3.1
-KUBEBUILDER_URL=https://github.com/kubernetes-sigs/kubebuilder/releases/download/v$(KUBEBUILDER_VERSION)/kubebuilder_$(KUBEBUILDER_VERSION)_linux_amd64.tar.gz
-KUBEBUILDER_TGZ=$(OUT)/kubebuilder/kubebuilder_$(KUBEBUILDER_VERSION)_linux_amd64.tar.gz
-KUBEBUILDER_BIN=$(OUT)/kubebuilder/bin
+HELM_FILES := $(shell find deploy/desec-webhook 2>/dev/null)
 
-$(shell mkdir -p "$(KUBEBUILDER_BIN)")
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p "$(LOCALBIN)"
 
-$(KUBEBUILDER_TGZ):
-	curl -sfL $(KUBEBUILDER_URL) -o $(KUBEBUILDER_TGZ)
+$(OUT):
+	mkdir -p "$(OUT)"
 
-prepare: $(KUBEBUILDER_TGZ)
-	tar xvzf $(KUBEBUILDER_TGZ) --strip-components=1 -C _out/kubebuilder
+## Tool Binaries
 
-$(KUBEBUILDER_BIN)/etcd: prepare
-$(KUBEBUILDER_BIN)/kube-apiserver: prepare
-$(KUBEBUILDER_BIN)/kubebuilder: prepare
-$(KUBEBUILDER_BIN)/kubectl: prepare
+ENVTEST ?= $(LOCALBIN)/setup-envtest
 
-test: $(KUBEBUILDER_BIN)/etcd $(KUBEBUILDER_BIN)/kube-apiserver $(KUBEBUILDER_BIN)/kubebuilder $(KUBEBUILDER_BIN)/kubectl
-	go test -v .
+#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
+ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/')
 
+#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31.x)
+ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1.x/')
+
+.PHONY: test
+test: setup-envtest
+	@echo "Running tests with Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@echo "Note: Set TEST_ZONE_NAME environment variable to run tests (e.g., TEST_ZONE_NAME=example.com. make test)"
+	$(eval ENVTEST_BIN_PATH := $(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path 2>/dev/null))
+	KUBEBUILDER_ASSETS="$(ENVTEST_BIN_PATH)" \
+	TEST_ASSET_ETCD="$(ENVTEST_BIN_PATH)/etcd" \
+	TEST_ASSET_KUBE_APISERVER="$(ENVTEST_BIN_PATH)/kube-apiserver" \
+	TEST_ASSET_KUBECTL="$(ENVTEST_BIN_PATH)/kubectl" \
+	$(GO) test -v .
+
+.PHONY: setup-envtest
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+		exit 1; \
+	}
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: clean
+clean:
+	chmod -R u+w $(LOCALBIN) $(OUT) 2>/dev/null || true
+	rm -rf $(LOCALBIN) $(OUT)
+
+.PHONY: build
 build:
-	docker build -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
+	docker build --platform "linux/amd64" -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
 
 .PHONY: rendered-manifest.yaml
-rendered-manifest.yaml:
+rendered-manifest.yaml: $(OUT)/rendered-manifest.yaml
+
+$(OUT)/rendered-manifest.yaml: $(HELM_FILES) | $(OUT)
 	helm template desec-webhook \
         --set image.repository=$(IMAGE_NAME) \
         --set image.tag=$(IMAGE_TAG) \
-        deploy/desec-webhook > "$(OUT)/rendered-manifest.yaml"
+        deploy/desec-webhook > $@
+
+# go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
+# $1 - target path with name of binary
+# $2 - package url which can be installed
+# $3 - specific version of package
+define go-install-tool
+@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
+set -e; \
+package=$(2)@$(3) ;\
+echo "Downloading $${package}" ;\
+rm -f "$(1)" ;\
+GOBIN="$(LOCALBIN)" go install $${package} ;\
+mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
+} ;\
+ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+endef
+
+define gomodver
+$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+endef
