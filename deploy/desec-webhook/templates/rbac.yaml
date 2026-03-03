@@ -104,7 +104,10 @@ rules:
   - apiGroups: [""]
     resources:
       - 'secrets'
-    resourceNames: {{ .Values.secretsNames }}
+{{- with .Values.secretsNames }}
+    resourceNames:
+{{ toYaml . | indent 6 }}
+{{- end }}
     verbs:
       - 'get'
       - 'watch'

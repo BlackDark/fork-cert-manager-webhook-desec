@@ -67,7 +67,6 @@ rules:
   - apiGroups: [""]
     resources:
       - 'secrets'
-    resourceNames: 
     verbs:
       - 'get'
       - 'watch'
@@ -134,7 +133,7 @@ metadata:
   labels:
     app: desec-webhook
 spec:
-  replicas: 
+  replicas: 1
   selector:
     matchLabels:
       app: desec-webhook
@@ -144,19 +143,24 @@ spec:
         app: desec-webhook
     spec:
       serviceAccountName: desec-webhook
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: desec-webhook
-          image: "kmorning/cert-manager-webhook-desec:latest"
+          image: "grollinger/cert-manager-webhook-desec:latest"
           imagePullPolicy: IfNotPresent
           args:
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key
+            - --secure-port=8443
           env:
             - name: GROUP_NAME
               value: "acme.ukmetrics.ca"
           ports:
             - name: https
-              containerPort: 443
+              containerPort: 8443
               protocol: TCP
           livenessProbe:
             httpGet:
@@ -172,6 +176,12 @@ spec:
             - name: certs
               mountPath: /tls
               readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             {}
       volumes:

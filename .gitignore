@@ -21,3 +21,6 @@ testdata/desec/desec-token.yaml
 bin
 _out
 _test
+
+.gocache/
+.gomodcache/
