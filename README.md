@@ -22,7 +22,7 @@ Once you're satisfied with the changes, deploy the webhook with:
 $ kubectl apply -f examples/deploy/desec-webhook.yaml
 ```
 
-### Using Helm
+### Using Helm (from this repository)
 
 ```bash
 $ helm upgrade --install desec-webhook ./deploy/desec-webhook \
@@ -36,6 +36,29 @@ If you want to scope secret access, set `secretsNames`:
 
 ```bash
 $ helm upgrade --install desec-webhook ./deploy/desec-webhook \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager \
+  --set-json 'secretsNames=["desec-token"]'
+```
+
+### Using Helm (OCI chart from GHCR)
+
+```bash
+$ helm upgrade --install desec-webhook oci://ghcr.io/blackdark/charts/desec-webhook \
+  --version 1.2.3 \
+  --namespace cert-manager \
+  --set groupName=acme.example.com \
+  --set certManager.namespace=cert-manager \
+  --set certManager.serviceAccountName=cert-manager
+```
+
+If you want to scope secret access, set `secretsNames`:
+
+```bash
+$ helm upgrade --install desec-webhook oci://ghcr.io/blackdark/charts/desec-webhook \
+  --version 1.2.3 \
   --namespace cert-manager \
   --set groupName=acme.example.com \
   --set certManager.namespace=cert-manager \
@@ -75,12 +98,21 @@ $ kubectl get secret test-example-com-tls -o json | jq -r '.data."tls.crt"' | ba
 $ make build
 ```
 
-## Releasing Multi-Arch Images
+## Releasing Image and Helm Chart
 
-The repository includes a GitHub Actions workflow at `.github/workflows/release-image.yaml`.
+The repository includes:
 
-- Push a tag like `v1.2.3` to publish a multi-arch image (`linux/amd64`, `linux/arm64`) to `ghcr.io/<owner>/cert-manager-webhook-desec`.
-- You can also run the workflow manually from the Actions tab (`workflow_dispatch`).
+- `.github/workflows/release-image.yaml` for the container image
+- `.github/workflows/release-helm-chart.yaml` for the Helm chart (OCI in GHCR)
+
+Push a tag like `v1.2.3` to publish:
+
+- Multi-arch image (`linux/amd64`, `linux/arm64`) to `ghcr.io/blackdark/cert-manager-webhook-desec`
+- Helm chart to `oci://ghcr.io/blackdark/charts/desec-webhook` with chart version `1.2.3`
+
+You can also run workflows manually from the Actions tab (`workflow_dispatch`).
+
+For manual chart releases, pass `chart_version` (for example `1.2.3`) when starting the `release-helm-chart` workflow.
 
 ### Running the test suite
 

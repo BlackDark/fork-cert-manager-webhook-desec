@@ -19,7 +19,7 @@ certManager:
 secretsNames: []
 
 image:
-  repository: grollinger/cert-manager-webhook-desec
+  repository: ghcr.io/blackdark/cert-manager-webhook-desec
   tag: latest
   pullPolicy: IfNotPresent
 

@@ -149,7 +149,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: desec-webhook
-          image: "grollinger/cert-manager-webhook-desec:latest"
+          image: "ghcr.io/blackdark/cert-manager-webhook-desec:latest"
           imagePullPolicy: IfNotPresent
           args:
             - --tls-cert-file=/tls/tls.crt
