@@ -54,17 +54,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{- define "desec-webhook.selfSignedIssuer" -}}
-{{ printf "%s-selfsign" (include "desec-webhook.fullname" .) }}
+{{- printf "%s-selfsign" (include "desec-webhook.fullname" .) -}}
 {{- end -}}
 
 {{- define "desec-webhook.rootCAIssuer" -}}
-{{ printf "%s-ca" (include "desec-webhook.fullname" .) }}
+{{- printf "%s-ca" (include "desec-webhook.fullname" .) -}}
 {{- end -}}
 
 {{- define "desec-webhook.rootCACertificate" -}}
-{{ printf "%s-ca" (include "desec-webhook.fullname" .) }}
+{{- printf "%s-ca" (include "desec-webhook.fullname" .) -}}
 {{- end -}}
 
 {{- define "desec-webhook.servingCertificate" -}}
-{{ printf "%s-webhook-tls" (include "desec-webhook.fullname" .) }}
+{{- printf "%s-webhook-tls" (include "desec-webhook.fullname" .) -}}
 {{- end -}}
