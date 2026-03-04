@@ -40,7 +40,7 @@ test: setup-envtest
 	TEST_ASSET_ETCD="$(ENVTEST_BIN_PATH)/etcd" \
 	TEST_ASSET_KUBE_APISERVER="$(ENVTEST_BIN_PATH)/kube-apiserver" \
 	TEST_ASSET_KUBECTL="$(ENVTEST_BIN_PATH)/kubectl" \
-	$(GO) test -v .
+	$(GO) test -v -tags integration .
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
