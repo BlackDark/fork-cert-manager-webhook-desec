@@ -86,9 +86,13 @@ rules:
   - apiGroups: [""]
     resources:
       - 'secrets'
-{{- with .Values.secretsNames }}
+{{- if .Values.secretsNames }}
     resourceNames:
-{{ toYaml . | indent 6 }}
+{{ toYaml .Values.secretsNames | indent 6 }}
+{{- else }}
+    # WARNING: secretsNames is empty — this role grants GET access to ALL secrets
+    # in namespace {{ .Values.certManager.namespace }}. Set secretsNames in values.yaml
+    # to restrict access to only the required secret(s).
 {{- end }}
     verbs:
       - 'get'

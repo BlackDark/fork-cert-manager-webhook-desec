@@ -14,8 +14,11 @@ certManager:
   namespace: cert-manager
   serviceAccountName: cert-manager
 
-# Optional list of secret names this webhook can read in certManager.namespace.
-# Keep this empty to allow reading any secret in that namespace.
+# List of secret names this webhook is allowed to read in certManager.namespace.
+# SECURITY: Leaving this empty grants access to ALL secrets in that namespace.
+# Best practice: specify the name of your deSEC API token secret here, e.g.:
+#   secretsNames:
+#     - desec-api-token
 secretsNames: []
 
 image:
