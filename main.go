@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -39,6 +40,10 @@ func main() {
 	if GroupName == "" {
 		panic("GROUP_NAME must be specified")
 	}
+
+	// Default to verbosity 2 so present/cleanup/skip logs are visible without
+	// any explicit -v flag. Override with -v=0 to silence or -v=6 for verbose.
+	flag.Set("v", "2")
 
 	// This will register our custom DNS provider with the webhook serving
 	// library, making it available as an API under the provided GroupName.
@@ -174,7 +179,7 @@ func (c *deSECDNSProviderSolver) doAction(ch *v1alpha1.ChallengeRequest, action 
 	if err != nil {
 		return err
 	}
-	klog.V(2).Infof("%s record `%s`", actionNames[action], ch.ResolvedFQDN)
+	klog.V(2).Infof("%s TXT record `%s`", actionNames[action], ch.ResolvedFQDN)
 	// Remove trailing dots from zone and fqdn
 	zone := util.UnFqdn(ch.ResolvedZone)
 	fqdn := util.UnFqdn(ch.ResolvedFQDN)
@@ -202,11 +207,25 @@ func (c *deSECDNSProviderSolver) doAction(ch *v1alpha1.ChallengeRequest, action 
 
 	switch action {
 	case actionPresent:
-		_, err := api.AddRecord(context.Background(), subName, domainName, "TXT", key, domain.MinimumTTL)
-		return err
+		_, added, err := api.AddRecord(context.Background(), subName, domainName, "TXT", key, domain.MinimumTTL)
+		if err != nil {
+			return err
+		}
+		if added {
+			klog.V(2).Infof("Successfully presented TXT record `%s`", ch.ResolvedFQDN)
+		} else {
+			klog.V(2).Infof("TXT record `%s` already exists, skipping", ch.ResolvedFQDN)
+		}
 	case actionCleanup:
-		_, err := api.DeleteRecord(context.Background(), subName, domainName, "TXT", key)
-		return err
+		_, deleted, err := api.DeleteRecord(context.Background(), subName, domainName, "TXT", key)
+		if err != nil {
+			return err
+		}
+		if deleted {
+			klog.V(2).Infof("Successfully cleaned up TXT record `%s`", ch.ResolvedFQDN)
+		} else {
+			klog.V(2).Infof("TXT record `%s` not found, skipping cleanup", ch.ResolvedFQDN)
+		}
 	}
 	return nil
 }

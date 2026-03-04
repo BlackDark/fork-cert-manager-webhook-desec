@@ -14,7 +14,7 @@ import (
 
 var defaultClient = &http.Client{Timeout: time.Second * 10}
 
-const baseURL = "https://desec.io/api/v1"
+var baseURL = "https://desec.io/api/v1"
 
 // API is the basic implemenataion of an API client for desec.io
 type API struct {
@@ -134,12 +134,13 @@ func (a *API) GetRRSets(ctx context.Context, subName, domainName, rtype string) 
 	return *rrsets, nil
 }
 
-// AddRecord - Adds a resource record to a new or existing RRSet
-func (a *API) AddRecord(ctx context.Context, subName, domainName, rtype, content string, ttl int) (RRSets, error) {
+// AddRecord - Adds a resource record to a new or existing RRSet.
+// Returns added=true if the record was created or appended, false if it already existed.
+func (a *API) AddRecord(ctx context.Context, subName, domainName, rtype, content string, ttl int) (RRSets, bool, error) {
 	// First check if there's already and existing RRSet
 	rrsets, err := a.GetRRSets(ctx, subName, domainName, rtype)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// Quote content if record type is TXT
 	if rtype == "TXT" {
@@ -151,7 +152,7 @@ func (a *API) AddRecord(ctx context.Context, subName, domainName, rtype, content
 		rrset = rrsets[0]
 		if slices.Contains(rrset.Records, content) {
 			// record already exists so just return
-			return rrsets, nil
+			return rrsets, false, nil
 		}
 		// record doesn't exist so append it
 		rrset.Records = append(rrset.Records, content)
@@ -162,17 +163,18 @@ func (a *API) AddRecord(ctx context.Context, subName, domainName, rtype, content
 	}
 	// write RRSet to deSEC
 	if err := a.updateRRSet(ctx, rrset, domainName); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return RRSets{rrset}, nil
+	return RRSets{rrset}, true, nil
 }
 
-// DeleteRecord - Deletes a record from an existing RRSet if exists
-func (a *API) DeleteRecord(ctx context.Context, subName, domainName, rtype, content string) (RRSets, error) {
+// DeleteRecord - Deletes a record from an existing RRSet if exists.
+// Returns deleted=true if the record was found and removed, false otherwise.
+func (a *API) DeleteRecord(ctx context.Context, subName, domainName, rtype, content string) (RRSets, bool, error) {
 	// Check if RRSet actually exists
 	rrsets, err := a.GetRRSets(ctx, subName, domainName, rtype)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(rrsets) > 0 {
 		// Quote content if record type is TXT
@@ -195,14 +197,14 @@ func (a *API) DeleteRecord(ctx context.Context, subName, domainName, rtype, cont
 			}
 			rrset.Records = records
 			if err := a.updateRRSet(ctx, rrset, domainName); err != nil {
-				return nil, err
+				return nil, false, err
 			}
-			return RRSets{rrset}, nil
+			return RRSets{rrset}, true, nil
 		}
-		return rrsets, nil
+		return rrsets, false, nil
 	}
 	// No existing RRSet found so just return an empty RRSets object
-	return RRSets{}, nil
+	return RRSets{}, false, nil
 }
 
 func (a *API) updateRRSet(ctx context.Context, rrset RRSet, domainName string) error {
