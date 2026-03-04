@@ -2,6 +2,7 @@
 .github
 bin
 _out
+release
 _test
 .gocache
 .gomodcache
