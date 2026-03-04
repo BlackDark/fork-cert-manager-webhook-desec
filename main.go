@@ -158,7 +158,7 @@ func (c *deSECDNSProviderSolver) getSecretKey(secret cmmeta.SecretKeySelector, n
 
 	sec, err := c.client.CoreV1().Secrets(namespace).Get(context.Background(), secret.Name, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("secret `%s/%s` not found", namespace, secret.Name)
+		return "", fmt.Errorf("secret %q/%q: %w", namespace, secret.Name, err)
 	}
 
 	data, ok := sec.Data[secret.Key]
