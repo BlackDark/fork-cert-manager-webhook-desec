@@ -1,48 +1,82 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
-	"fmt"
-	"os"
 	"testing"
-	"time"
 
-	acmetest "github.com/cert-manager/cert-manager/test/acme"
+	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
-var (
-	zone = os.Getenv("TEST_ZONE_NAME")
-)
-
-func TestRunsSuite(t *testing.T) {
-	// The manifest path should contain a file named config.json that is a
-	// snippet of valid configuration that should be included on the
-	// ChallengeRequest passed as part of the test cases.
-	//
-
-	// Generate a random DNS challenge key for testing
-	randomBytes := make([]byte, 32)
-	if _, err := rand.Read(randomBytes); err != nil {
-		t.Fatalf("Failed to generate random challenge key: %v", err)
+func TestGetSubName(t *testing.T) {
+	tests := []struct {
+		name       string
+		fqdn       string
+		domainName string
+		wantSub    string
+		wantErr    bool
+	}{
+		{name: "normal subdomain", fqdn: "_acme-challenge.example.com", domainName: "example.com", wantSub: "_acme-challenge"},
+		{name: "multi-label subdomain", fqdn: "_acme-challenge.sub.example.com", domainName: "example.com", wantSub: "_acme-challenge.sub"},
+		{name: "apex domain equals domain", fqdn: "example.com", domainName: "example.com", wantSub: ""},
+		{name: "empty fqdn", fqdn: "", domainName: "example.com", wantErr: true},
+		{name: "empty domain", fqdn: "_acme-challenge.example.com", domainName: "", wantErr: true},
+		{name: "fqdn not in domain", fqdn: "_acme-challenge.other.com", domainName: "example.com", wantErr: true},
 	}
-	randomKey := base64.RawURLEncoding.EncodeToString(randomBytes)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getSubName(tt.fqdn, tt.domainName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getSubName() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.wantSub {
+				t.Errorf("getSubName() = %q, want %q", got, tt.wantSub)
+			}
+		})
+	}
+}
 
-	// Generate a random DNS name suffix for testing (hex encoded to ensure DNS-safe characters)
-	randomSuffix := hex.EncodeToString(randomBytes[:8])
-
-	fixture := acmetest.NewFixture(&deSECDNSProviderSolver{},
-		acmetest.SetResolvedZone(zone),
-		acmetest.SetAllowAmbientCredentials(false),
-		acmetest.SetManifestPath("testdata/desec"),
-		acmetest.SetDNSChallengeKey(randomKey),
-		acmetest.SetResolvedFQDN(fmt.Sprintf("cert-manager-dns01-tests-%s.%s", randomSuffix, zone)),
-		acmetest.SetPropagationLimit(time.Minute*15),
-	)
-
-	// need to uncomment and RunConformance delete runBasic and runExtended once https://github.com/cert-manager/cert-manager/pull/4835 is merged
-	// fixture.RunConformance(t)
-	fixture.RunBasic(t)
-	fixture.RunExtended(t)
+func TestLoadConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			input:   `{"apiTokenSecretRef":{"name":"my-secret","key":"token"}}`,
+			wantErr: false,
+		},
+		{
+			name:    "nil config",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "missing name",
+			input:   `{"apiTokenSecretRef":{"name":"","key":"token"}}`,
+			wantErr: true,
+		},
+		{
+			name:    "missing key",
+			input:   `{"apiTokenSecretRef":{"name":"my-secret","key":""}}`,
+			wantErr: true,
+		},
+		{
+			name:    "invalid json",
+			input:   `not-json`,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfgJSON *extapi.JSON
+			if tt.input != "" {
+				cfgJSON = &extapi.JSON{Raw: []byte(tt.input)}
+			}
+			_, err := loadConfig(cfgJSON)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("loadConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
 }

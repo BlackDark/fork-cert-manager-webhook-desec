@@ -40,7 +40,7 @@ test: setup-envtest
 	TEST_ASSET_ETCD="$(ENVTEST_BIN_PATH)/etcd" \
 	TEST_ASSET_KUBE_APISERVER="$(ENVTEST_BIN_PATH)/kube-apiserver" \
 	TEST_ASSET_KUBECTL="$(ENVTEST_BIN_PATH)/kubectl" \
-	$(GO) test -v .
+	$(GO) test -v -tags integration .
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
@@ -78,7 +78,7 @@ $(OUT)/rendered-manifest.yaml: $(HELM_FILES) | $(OUT)
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
+@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(abspath $(1)-$(3))" ] || { \
 set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
@@ -86,7 +86,7 @@ rm -f "$(1)" ;\
 GOBIN="$(LOCALBIN)" go install $${package} ;\
 mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
 } ;\
-ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+ln -sf "$(abspath $(1)-$(3))" "$(1)"
 endef
 
 define gomodver

@@ -2,13 +2,17 @@ package desec
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
+
+var defaultClient = &http.Client{Timeout: time.Second * 10}
 
 const baseURL = "https://desec.io/api/v1"
 
@@ -50,16 +54,14 @@ type RRSet struct {
 type RRSets []RRSet
 
 // Request builds the raw request
-func (a *API) request(method, path string, body io.Reader, target interface{}) error {
+func (a *API) request(ctx context.Context, method, path string, body io.Reader, target any) error {
 	if path[0] != '/' {
 		path = "/" + path
 	}
 
 	url := baseURL + path
 
-	client := &http.Client{Timeout: time.Second * 10}
-
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return err
 	}
@@ -69,7 +71,7 @@ func (a *API) request(method, path string, body io.Reader, target interface{}) e
 
 	// TODO: add k8s logging
 	// klog.V(6).Infof("%s %s", method, url)
-	resp, err := client.Do(req)
+	resp, err := defaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -83,18 +85,22 @@ func (a *API) request(method, path string, body io.Reader, target interface{}) e
 		}
 		return fmt.Errorf("%s %s error: %s", method, path, errResp.Detail)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
-		return fmt.Errorf("%s %s response parsing error: %v", method, path, err)
+	// Skip decoding if no target provided (e.g. PUT that returns 204 No Content)
+	// or if the server explicitly returned 204 with no body.
+	if target != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+			return fmt.Errorf("%s %s response parsing error: %v", method, path, err)
+		}
 	}
 
 	return nil
 }
 
 // GetDNSDomains - returns all dns domains managed by deSEC
-func (a *API) GetDNSDomains() (DNSDomains, error) {
+func (a *API) GetDNSDomains(ctx context.Context) (DNSDomains, error) {
 	method, path := "GET", "domains/"
 	domains := new(DNSDomains)
-	err := a.request(method, path, nil, domains)
+	err := a.request(ctx, method, path, nil, domains)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +108,8 @@ func (a *API) GetDNSDomains() (DNSDomains, error) {
 }
 
 // GetDNSDomain - get the dns domain associated with the given subdomain
-func (a *API) GetDNSDomain(subdomain string) (*DNSDomain, error) {
-	domains, err := a.GetDNSDomains()
+func (a *API) GetDNSDomain(ctx context.Context, subdomain string) (*DNSDomain, error) {
+	domains, err := a.GetDNSDomains(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +122,12 @@ func (a *API) GetDNSDomain(subdomain string) (*DNSDomain, error) {
 }
 
 // GetRRSets returns all resource record sets for a given domain, subdomain and type
-func (a *API) GetRRSets(subName, domainName, rtype string) (RRSets, error) {
+func (a *API) GetRRSets(ctx context.Context, subName, domainName, rtype string) (RRSets, error) {
 	method := "GET"
 	path := "domains/" + domainName + "/rrsets/?subname=" + subName + "&type=" + rtype
 
 	rrsets := new(RRSets)
-	err := a.request(method, path, nil, rrsets)
+	err := a.request(ctx, method, path, nil, rrsets)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +135,9 @@ func (a *API) GetRRSets(subName, domainName, rtype string) (RRSets, error) {
 }
 
 // AddRecord - Adds a resource record to a new or existing RRSet
-func (a *API) AddRecord(subName, domainName, rtype, content string, ttl int) (RRSets, error) {
+func (a *API) AddRecord(ctx context.Context, subName, domainName, rtype, content string, ttl int) (RRSets, error) {
 	// First check if there's already and existing RRSet
-	rrsets, err := a.GetRRSets(subName, domainName, rtype)
+	rrsets, err := a.GetRRSets(ctx, subName, domainName, rtype)
 	if err != nil {
 		return nil, err
 	}
@@ -143,13 +149,11 @@ func (a *API) AddRecord(subName, domainName, rtype, content string, ttl int) (RR
 	if len(rrsets) > 0 {
 		// RRSet exists, so see if we need to append a new record
 		rrset = rrsets[0]
-		for _, r := range rrset.Records {
-			if r == content {
-				// record already exist so just return
-				return rrsets, nil
-			}
+		if slices.Contains(rrset.Records, content) {
+			// record already exists so just return
+			return rrsets, nil
 		}
-		// record doesn't exit so append it
+		// record doesn't exist so append it
 		rrset.Records = append(rrset.Records, content)
 	} else {
 		// No existing RRSet found, so create a new one
@@ -157,17 +161,16 @@ func (a *API) AddRecord(subName, domainName, rtype, content string, ttl int) (RR
 		rrset = RRSet{SubName: subName, Type: rtype, Records: records, TTL: ttl}
 	}
 	// write RRSet to deSEC
-	rrsets, err = a.updateRRSet(rrset, domainName)
-	if err != nil {
+	if err := a.updateRRSet(ctx, rrset, domainName); err != nil {
 		return nil, err
 	}
-	return rrsets, nil
+	return RRSets{rrset}, nil
 }
 
 // DeleteRecord - Deletes a record from an existing RRSet if exists
-func (a *API) DeleteRecord(subName, domainName, rtype, content string) (RRSets, error) {
+func (a *API) DeleteRecord(ctx context.Context, subName, domainName, rtype, content string) (RRSets, error) {
 	// Check if RRSet actually exists
-	rrsets, err := a.GetRRSets(subName, domainName, rtype)
+	rrsets, err := a.GetRRSets(ctx, subName, domainName, rtype)
 	if err != nil {
 		return nil, err
 	}
@@ -191,11 +194,10 @@ func (a *API) DeleteRecord(subName, domainName, rtype, content string) (RRSets, 
 				records = make([]string, 0)
 			}
 			rrset.Records = records
-			rrsets, err := a.updateRRSet(rrset, domainName)
-			if err != nil {
+			if err := a.updateRRSet(ctx, rrset, domainName); err != nil {
 				return nil, err
 			}
-			return rrsets, nil
+			return RRSets{rrset}, nil
 		}
 		return rrsets, nil
 	}
@@ -203,19 +205,15 @@ func (a *API) DeleteRecord(subName, domainName, rtype, content string) (RRSets, 
 	return RRSets{}, nil
 }
 
-func (a *API) updateRRSet(rrset RRSet, domainName string) (RRSets, error) {
-	rrsets := RRSets{}
-	rrsets = append(rrsets, rrset)
+func (a *API) updateRRSet(ctx context.Context, rrset RRSet, domainName string) error {
+	rrsets := RRSets{rrset}
 	rawJSON, err := json.Marshal(rrsets)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	//fmt.Printf("rawJSON = %s\n", string(rawJSON)) // debug
 	method := "PUT"
 	path := "domains/" + domainName + "/rrsets/"
-	err = a.request(method, path, bytes.NewBuffer(rawJSON), &rrsets)
-	if err != nil {
-		return nil, err
-	}
-	return rrsets, nil
+	// deSEC returns 204 No Content on successful PUT; pass nil target to skip decode.
+	return a.request(ctx, method, path, bytes.NewBuffer(rawJSON), nil)
 }
