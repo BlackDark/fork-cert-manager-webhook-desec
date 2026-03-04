@@ -83,6 +83,8 @@ func (a *API) request(method, path string, body io.Reader, target interface{}) e
 		}
 		return fmt.Errorf("%s %s error: %s", method, path, errResp.Detail)
 	}
+	// Skip decoding if no target provided (e.g. PUT that returns 204 No Content)
+	// or if the server explicitly returned 204 with no body.
 	if target != nil && resp.StatusCode != http.StatusNoContent {
 		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 			return fmt.Errorf("%s %s response parsing error: %v", method, path, err)
@@ -212,5 +214,6 @@ func (a *API) updateRRSet(rrset RRSet, domainName string) error {
 	//fmt.Printf("rawJSON = %s\n", string(rawJSON)) // debug
 	method := "PUT"
 	path := "domains/" + domainName + "/rrsets/"
+	// deSEC returns 204 No Content on successful PUT; pass nil target to skip decode.
 	return a.request(method, path, bytes.NewBuffer(rawJSON), nil)
 }
