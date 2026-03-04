@@ -188,7 +188,7 @@ func (c *deSECDNSProviderSolver) doAction(ch *v1alpha1.ChallengeRequest, action 
 	api := &desec.API{Token: apiToken}
 
 	// get dns domain from deSEC API
-	domain, err := api.GetDNSDomain(zone)
+	domain, err := api.GetDNSDomain(context.Background(), zone)
 	if err != nil {
 		return err
 	}
@@ -202,10 +202,10 @@ func (c *deSECDNSProviderSolver) doAction(ch *v1alpha1.ChallengeRequest, action 
 
 	switch action {
 	case actionPresent:
-		_, err := api.AddRecord(subName, domainName, "TXT", key, domain.MinimumTTL)
+		_, err := api.AddRecord(context.Background(), subName, domainName, "TXT", key, domain.MinimumTTL)
 		return err
 	case actionCleanup:
-		_, err := api.DeleteRecord(subName, domainName, "TXT", key)
+		_, err := api.DeleteRecord(context.Background(), subName, domainName, "TXT", key)
 		return err
 	}
 	return nil
